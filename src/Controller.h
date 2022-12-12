@@ -103,6 +103,9 @@ public:
     /* Commands to stdout */
     bool print_cmd_trace = false;
 
+    /* add book keeping code to know which mode to use */
+    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND } cream_mode = CREAM_MODE::NORMAL;
+
     /* Constructor */
     Controller(const Config& configs, DRAM<T>* channel) :
         channel(channel),
@@ -123,9 +126,11 @@ public:
             for (unsigned int i = 0; i < channel->children.size(); i++)
                 cmd_trace_files[i].open(prefix + to_string(i) + suffix);
         }
+        
+        /* CREAM CUSTOM CODE */
+        cream_mode = CREAM_MODE::RANK_SUBSET;
 
         // regStats
-
         row_hits
             .name("row_hits_channel_"+to_string(channel->id) + "_core")
             .desc("Number of row hits per channel per core")
@@ -461,8 +466,8 @@ public:
         if (req->type == Request::Type::READ) {
             
             /** 
-            ECC DRAM CODE : Map the 8 chips as 7:1 
-            7 chips work normally, 8th chip is ECC 
+            ECC DRAM CODE : Map the 9 chips as 8:1 
+            8 chips work normally, 9th chip is ECC 
             */
             auto addr = req->addr;
             clear_lower_bits(addr, 6); // 6 bits here as the total txn size is 2^6 bytes(64 bytes per read)
@@ -472,9 +477,11 @@ public:
             auto  chip_index = slice_lower_bits(addr, 4);
             if (chip_index == (1<<3)) {
                 // update the latency to reflect the back to back calls needed to assemble the request
-                // comment this code if using only 8 channels
-                //req->depart = clk + (8 * channel->spec->read_latency);
-                req->depart = clk + (channel->spec->read_latency);
+                if (cream_mode == CREAM_MODE::RANK_SUBSET) {
+                    req->depart = clk + (8 * channel->spec->read_latency);
+                } else {
+                    req->depart = clk + (channel->spec->read_latency);
+                }
             } else {
                 req->depart = clk + channel->spec->read_latency;
             }
@@ -482,6 +489,9 @@ public:
         }
 
         if (req->type == Request::Type::WRITE) {
+            /* Each write now becomes Read Modify Write */
+            // for normal wriote, it adds one additional read latency 
+            
             channel->update_serving_requests(req->addr_vec.data(), -1, clk);
             // req->callback(*req);
         }

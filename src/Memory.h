@@ -100,6 +100,9 @@ public:
     /* Idea: store the page mapping along with whether its dirty */
     map<pair<int, long>, pair<long, int>> page_translation;
 
+    /* add book keeping code to know which mode to use */
+    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND } cream_mode = CREAM_MODE::NORMAL;
+
     vector<Controller<T>*> ctrls;
     T * spec;
     vector<int> addr_bits;
@@ -139,14 +142,21 @@ public:
         if (type != Type::RoBaRaCoCh && spec->standard_name.substr(0, 5) == "LPDDR")
             assert((sz[int(T::Level::Row)] & (sz[int(T::Level::Row)] - 1)) == 0);
 
+        /** CUSTOM CODE : CREAM */
+        cream_mode = CREAM_MODE::RANK_SUBSET;
+
         max_address = spec->channel_width / (8); // 8
 
         for (unsigned int lev = 0; lev < addr_bits.size(); lev++) {
             addr_bits[lev] = calc_log2(sz[lev]);
+            /* For COL add customization code to process CREAM*/
             if (lev == 4) {
                 // if we are using the ECC portion of RAM, then max address will be different
-                max_address *= (sz[lev]/2 + (sz[lev]/(2*8))); // sz[4] represents the col count 
-               //  max_address += (sz[lev]/(2*8));  // we have one addiional chip of capacity
+                if(cream_mode == CREAM_MODE::RANK_SUBSET) {
+                    max_address *= ((sz[lev] / 2) + (sz[lev]/(2*8))); // sz[4] represents the col count 
+                } else {
+                    max_address *= sz[lev] / 2;  // we have one addiional chip of capacity
+                }
             } else {
                 max_address *= sz[lev];
             }
@@ -360,11 +370,14 @@ public:
                             int chip_index = addr & (( 1 << 4 ) - 1);
                             // if this is the 8th chip
                             // make it 9 if utilizing chip 8 or else keep it 8
-                            chip_index = chip_index % 8;
-                            if (chip_index == ( 1 << 3 )) {
-                                // this is the case where we add additional latency;
-                                // set some global var here 
+                            int NUM_CHIPS; 
+                            if (cream_mode == CREAM_MODE::RANK_SUBSET) {
+                                NUM_CHIPS = 9;
+                            } else {
+                                NUM_CHIPS = 8;
                             }
+                            chip_index = chip_index % NUM_CHIPS;
+                    
                             // (bits + 1) to represent the increased capacity
                             auto mask = ((1 << (addr_bits[i])) - 1);
                             // some complicated 2am bit math
@@ -372,6 +385,7 @@ public:
                             mask = mask | chip_index;
                             int lbits = addr & mask;
                             req.addr_vec[i] = lbits;
+
                             // slice lower bits anyways to clear them
                             auto og = slice_lower_bits(addr, addr_bits[i]);
                             

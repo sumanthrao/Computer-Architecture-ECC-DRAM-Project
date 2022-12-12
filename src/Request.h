@@ -31,6 +31,8 @@ public:
     } type;
 
     long arrive = -1;
+    // add this to track the ID of this request, so we can use it to calculate the latency for section 4.3 of the paper
+    long req_number = 0;
     long depart = -1;
     function<void(Request&)> callback; // call back with more info
 
