@@ -109,7 +109,8 @@ public:
     string mapping_file;
     bool use_mapping_file;
     bool dump_mapping;
-    
+    int global_req_count = 0;
+
     int tx_bits;
 
     Memory(const Config& configs, vector<Controller<T>*> ctrls)
@@ -143,7 +144,7 @@ public:
             assert((sz[int(T::Level::Row)] & (sz[int(T::Level::Row)] - 1)) == 0);
 
         /** CUSTOM CODE : CREAM */
-        cream_mode = CREAM_MODE::RANK_SUBSET;
+        cream_mode = CREAM_MODE::WRAP_AROUND;
 
         max_address = spec->channel_width / (8); // 8
 
@@ -412,6 +413,8 @@ public:
             if (req.type == Request::Type::READ) {
               ++num_read_requests[coreid];
               ++incoming_read_reqs_per_channel[req.addr_vec[int(T::Level::Channel)]];
+              // added counter to support wrap around
+              req.req_number = global_req_count++;
             }
             if (req.type == Request::Type::WRITE) {
               ++num_write_requests[coreid];

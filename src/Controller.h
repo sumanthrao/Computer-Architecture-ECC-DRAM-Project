@@ -128,7 +128,7 @@ public:
         }
         
         /* CREAM CUSTOM CODE */
-        cream_mode = CREAM_MODE::RANK_SUBSET;
+        cream_mode = CREAM_MODE::WRAP_AROUND;
 
         // regStats
         row_hits
@@ -420,7 +420,6 @@ public:
             int tx = (channel->spec->prefetch_size * channel->spec->channel_width / 8);
             if (req->type == Request::Type::READ) {
                 
-
                 if (is_row_hit(req)) {
                     ++read_row_hits[coreid];
                     ++row_hits;
@@ -432,6 +431,10 @@ public:
                     ++row_misses;
                 }
               read_transaction_bytes += tx;
+              if (cream_mode == CREAM_MODE::WRAP_AROUND) {
+                // We will fetch 9 bytes , so amke it 8 + 1 here 
+                read_transaction_bytes += 1;
+              }
             } else if (req->type == Request::Type::WRITE) {
               if (is_row_hit(req)) {
                   ++write_row_hits[coreid];
@@ -479,6 +482,12 @@ public:
                 // update the latency to reflect the back to back calls needed to assemble the request
                 if (cream_mode == CREAM_MODE::RANK_SUBSET) {
                     req->depart = clk + (8 * channel->spec->read_latency);
+                } else if(cream_mode == CREAM_MODE::WRAP_AROUND) {
+                    /* WRAP AROUND SUPPORT: So every 8 requests, we can fetch 9 values in an ideal world. Use this logic to compute the latency */
+                    if (req->req_number % 8 == 0) {
+                        // this is a free request since we ould have fetched 9 requests by now
+                        req->depart = clk + 1; 
+                    }
                 } else {
                     req->depart = clk + (channel->spec->read_latency);
                 }
