@@ -104,7 +104,7 @@ public:
     bool print_cmd_trace = false;
 
     /* add book keeping code to know which mode to use */
-    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND } cream_mode = CREAM_MODE::NORMAL;
+    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET } cream_mode = CREAM_MODE::NORMAL;
 
     /* Constructor */
     Controller(const Config& configs, DRAM<T>* channel) :
@@ -467,33 +467,46 @@ public:
 
         // set a future completion time for read requests
         if (req->type == Request::Type::READ) {
+            /** default latency */
+            req->depart = clk + channel->spec->read_latency;
             
-            /** 
-            ECC DRAM CODE : Map the 9 chips as 8:1 
-            8 chips work normally, 9th chip is ECC 
-            */
-            auto addr = req->addr;
-            clear_lower_bits(addr, 6); // 6 bits here as the total txn size is 2^6 bytes(64 bytes per read)
-
-            /* now if the addr belongs to chip 8, then remap it, it belongs to ECC */ 
-            /* slice the last 3 bits to check the chip ID */
-            auto  chip_index = slice_lower_bits(addr, 4);
-            if (chip_index == (1<<3)) {
-                // update the latency to reflect the back to back calls needed to assemble the request
-                if (cream_mode == CREAM_MODE::RANK_SUBSET) {
-                    req->depart = clk + (8 * channel->spec->read_latency);
-                } else if(cream_mode == CREAM_MODE::WRAP_AROUND) {
-                    /* WRAP AROUND SUPPORT: So every 8 requests, we can fetch 9 values in an ideal world. Use this logic to compute the latency */
-                    if (req->req_number % 8 == 0) {
-                        // this is a free request since we ould have fetched 9 requests by now
-                        req->depart = clk + 1; 
+            if (cream_mode != CREAM_MODE::NORMAL) {
+                if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
+                    auto addr = req->addr;
+                    int *sz = channel->spec->org_entry.count;
+                    clear_lower_bits(addr, 6); // 6 bits here as the total txn size is 2^6 bytes(64 bytes per read)
+                    clear_lower_bits(addr, calc_log2(sz[4])); 
+                    auto  row_index = slice_lower_bits(addr,  calc_log2(sz[3]));
+                    /* If it belongs to one of the boundary rows */
+                    if (row_index > (7/8 * (sz[3]))) {
+                        /* 8 back to back requests */
+                        req->depart = clk + 8 * channel->spec->read_latency;
                     }
                 } else {
-                    req->depart = clk + (channel->spec->read_latency);
+                    /** 
+                    ECC DRAM CODE : Map the 9 chips as 8:1 
+                    8 chips work normally, 9th chip is ECC 
+                    */
+                    auto addr = req->addr;
+                    clear_lower_bits(addr, 6); // 6 bits here as the total txn size is 2^6 bytes(64 bytes per read)
+
+                    /* now if the addr belongs to chip 8, then remap it, it belongs to ECC */ 
+                    /* slice the last 3 bits to check the chip ID */
+                    auto  chip_index = slice_lower_bits(addr, 4);
+                    if (chip_index == (1<<3)) {
+                        // update the latency to reflect the back to back calls needed to assemble the request
+                        if (cream_mode == CREAM_MODE::RANK_SUBSET) {
+                            req->depart = clk + (8 * channel->spec->read_latency);
+                        } else if(cream_mode == CREAM_MODE::WRAP_AROUND) {
+                            /* WRAP AROUND SUPPORT: So every 8 requests, we can fetch 9 values in an ideal world. Use this logic to compute the latency */
+                            if (req->req_number % 8 == 0) {
+                                // this is a free request since we ould have fetched 9 requests by now
+                                req->depart = clk + 1; 
+                            }
+                        } 
+                    }
                 }
-            } else {
-                req->depart = clk + channel->spec->read_latency;
-            }
+            } 
             pending.push_back(*req);
         }
 
@@ -587,6 +600,13 @@ public:
     }
 
 private:
+
+    int calc_log2(int val){
+        int n = 0;
+        while ((val >>= 1))
+            n ++;
+        return n;
+    }
     typename T::Command get_first_cmd(list<Request>::iterator req)
     {
         typename T::Command cmd = channel->spec->translate[int(req->type)];

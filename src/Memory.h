@@ -101,7 +101,7 @@ public:
     map<pair<int, long>, pair<long, int>> page_translation;
 
     /* add book keeping code to know which mode to use */
-    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND } cream_mode = CREAM_MODE::NORMAL;
+    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET} cream_mode = CREAM_MODE::NORMAL;
 
     vector<Controller<T>*> ctrls;
     T * spec;
@@ -158,6 +158,7 @@ public:
                 } else {
                     max_address *= sz[lev] / 2;  // we have one addiional chip of capacity
                 }
+            /* For BOUNDARY method, diving each row */
             } else {
                 max_address *= sz[lev];
             }
@@ -367,7 +368,7 @@ public:
                 case int(Type::ChRaBaRoCo):
                     for (int i = addr_bits.size() - 1; i >= 0; i--){
                         // here we need to check for the COL 
-                        if(i == 5-1) {
+                        if(i == 4) {
                             int chip_index = addr & (( 1 << 4 ) - 1);
                             // if this is the 8th chip
                             // make it 9 if utilizing chip 8 or else keep it 8
@@ -391,6 +392,7 @@ public:
                             auto og = slice_lower_bits(addr, addr_bits[i]);
                             
                             cout << "og addr: " << og << " updated addr: " << req.addr_vec[i] << std::endl;
+                        // check for ROW if its BOUNDARY CREAM solution
                         } else {
                             req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         }
