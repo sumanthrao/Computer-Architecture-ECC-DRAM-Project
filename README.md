@@ -1,1 +1,1 @@
-# Computer-Architecture-EDC-DRAM-Project
+# Computer-Architecture-ECC-DRAM-Project
