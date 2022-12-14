@@ -144,7 +144,7 @@ public:
             assert((sz[int(T::Level::Row)] & (sz[int(T::Level::Row)] - 1)) == 0);
 
         /** CUSTOM CODE : CREAM */
-        cream_mode = CREAM_MODE::WRAP_AROUND;
+        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
 
         max_address = spec->channel_width / (8); // 8
 
@@ -156,7 +156,7 @@ public:
                 if(cream_mode == CREAM_MODE::RANK_SUBSET) {
                     max_address *= ((sz[lev] / 2) + (sz[lev]/(2*8))); // sz[4] represents the col count 
                 } else {
-                    max_address *= sz[lev] / 2;  // we have one addiional chip of capacity
+                    max_address *= sz[lev];  // we have one addiional chip of capacity
                 }
             /* For BOUNDARY method, diving each row */
             } else {
@@ -368,7 +368,7 @@ public:
                 case int(Type::ChRaBaRoCo):
                     for (int i = addr_bits.size() - 1; i >= 0; i--){
                         // here we need to check for the COL 
-                        if(i == 4) {
+                        if(i == 4 && (cream_mode == CREAM_MODE::RANK_SUBSET )) {
                             int chip_index = addr & (( 1 << 4 ) - 1);
                             // if this is the 8th chip
                             // make it 9 if utilizing chip 8 or else keep it 8
@@ -391,8 +391,7 @@ public:
                             // slice lower bits anyways to clear them
                             auto og = slice_lower_bits(addr, addr_bits[i]);
                             
-                            cout << "og addr: " << og << " updated addr: " << req.addr_vec[i] << std::endl;
-                        // check for ROW if its BOUNDARY CREAM solution
+                            //cout << "og addr: " << og << " updated addr: " << req.addr_vec[i] << std::endl;
                         } else {
                             req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         }

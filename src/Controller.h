@@ -105,6 +105,9 @@ public:
 
     /* add book keeping code to know which mode to use */
     enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET } cream_mode = CREAM_MODE::NORMAL;
+    long ROW_BOUNDARY;
+    /* change this ratio for different ROW BOUNDARY experiments */
+    long ECC_RATIO = 1/8;
 
     /* Constructor */
     Controller(const Config& configs, DRAM<T>* channel) :
@@ -128,7 +131,14 @@ public:
         }
         
         /* CREAM CUSTOM CODE */
-        cream_mode = CREAM_MODE::WRAP_AROUND;
+        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
+        /* Calculate the boundary once here */
+        int *sz = channel->spec->org_entry.count;
+        auto col_sz = sz[4];
+        col_sz = col_sz >> 6; // last 6 bits are for prefetch (64 bytes)
+        auto row_sz = sz[3];
+        auto ECC_capacity = ECC_RATIO * col_sz * row_sz;
+        ROW_BOUNDARY = (col_sz * row_sz) - ECC_capacity;
 
         // regStats
         row_hits
@@ -475,10 +485,11 @@ public:
                     auto addr = req->addr;
                     int *sz = channel->spec->org_entry.count;
                     clear_lower_bits(addr, 6); // 6 bits here as the total txn size is 2^6 bytes(64 bytes per read)
-                    clear_lower_bits(addr, calc_log2(sz[4])); 
-                    auto  row_index = slice_lower_bits(addr,  calc_log2(sz[3]));
+
+                    auto  col_val = slice_lower_bits(addr,  calc_log2(sz[4]));
+                    auto  row_val = slice_lower_bits(addr,  calc_log2(sz[3]));
                     /* If it belongs to one of the boundary rows */
-                    if (row_index > (7/8 * (sz[3]))) {
+                    if ((col_val*row_val) > ROW_BOUNDARY) {
                         /* 8 back to back requests */
                         req->depart = clk + 8 * channel->spec->read_latency;
                     }
