@@ -678,16 +678,11 @@ public:
                       long phys_page_to_read = lrand() % free_physical_pages.size();
                       assert(free_physical_pages[phys_page_to_read] != -1);
                       /* if its not already captured */
-                      if (page_translation[target].second == 1) {
-                        dirty_write_physical_pages -= 1;
-                      }
+                      
+                      dirty_physical_pages.erase(phys_page_to_read);
+                      
                       page_translation[target] = make_pair(phys_page_to_read, (int)is_write);
                       if (page_translation[target].second == 1) {
-                        dirty_write_physical_pages += 1;
-                        if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
-                            max_dirty_pages = 0 ;
-                            max_dirty_pages += dirty_write_physical_pages.value();
-                        }
                         dirty_physical_pages.insert(phys_page_to_read);
                       } else {
                         dirty_physical_pages.erase(phys_page_to_read);
@@ -715,32 +710,29 @@ public:
                         page_translation[target] = make_pair(phys_page_to_read,(int)is_write);
                         free_physical_pages[phys_page_to_read] = coreid;
                         if (is_write) {
-                            dirty_write_physical_pages += 1;
-                            if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
-                                max_dirty_pages = 0 ;
-                                max_dirty_pages += dirty_write_physical_pages.value();
-                            }
                             dirty_physical_pages.insert(phys_page_to_read);
                         }
                         total_dirty_pages += 1;
                         --free_physical_pages_remaining;
                         --physical_pages_remaining;
                     }
-                }
-                /* Hack the code to reflect write physical pages */
-                if (is_write) {
-                    /* if its not already captured */
-                    if (page_translation[target].second != 1) {
-                        dirty_write_physical_pages += 1;
-                        if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
-                            max_dirty_pages = 0 ;
-                            max_dirty_pages += dirty_write_physical_pages.value();
+                } else {
+                    // /* Hack the code to reflect write physical pages */
+                    if (is_write) {
+                        /* if its not already captured */
+                        if (page_translation[target].second != 1) {
+                            page_translation[target].second = 1;
+                            dirty_physical_pages.insert(page_translation[target].first);
                         }
-                        page_translation[target].second = 1;
-                        dirty_physical_pages.insert(page_translation[target].first);
-                    }
-                    
-                } 
+                    } 
+                }
+                dirty_write_physical_pages = dirty_physical_pages.size();
+                if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
+                    max_dirty_pages = 0 ;
+                    max_dirty_pages += dirty_write_physical_pages.value();
+                }
+                std::cout << "Log: page allocate: " << addr << " dirty_write_physical_pages: " << dirty_write_physical_pages.value() << "max_dirty_pages " << max_dirty_pages.value() << std::endl; 
+                // } 
                 // SAUGATA TODO: page size should not always be fixed to 4KB
                 return (page_translation[target].first << 12) | (addr & ((1 << 12) - 1));
             }
