@@ -49,6 +49,8 @@ protected:
     ScalarStat read_latency_avg;
     ScalarStat read_latency_sum;
 
+    ScalarStat num_ecc_read_requests;
+
     ScalarStat req_queue_length_avg;
     ScalarStat req_queue_length_sum;
     ScalarStat read_req_queue_length_avg;
@@ -131,7 +133,7 @@ public:
         }
         
         /* CREAM CUSTOM CODE */
-        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
+        cream_mode = CREAM_MODE::NORMAL;
         /* Calculate the boundary once here */
         int *sz = channel->spec->org_entry.count;
         auto col_sz = sz[4];
@@ -254,6 +256,11 @@ public:
         write_req_queue_length_avg
             .name("write_req_queue_length_avg_"+to_string(channel->id))
             .desc("Write queue length average per memory cycle per channel.")
+            .precision(6)
+            ;
+        num_ecc_read_requests
+            .name("num_ecc_read_requests"+to_string(channel->id))
+            .desc("num_ecc_read_requests")
             .precision(6)
             ;
 
@@ -492,8 +499,8 @@ public:
                     /* If it belongs to one of the boundary rows */
                     if (req->addr_vec[3] > 1024) {
                         /* 8 back to back requests */
-                        //std::cout << "row val: " << req->addr_vec[3] << std::endl;
-                        req->depart = clk + 8 * channel->spec->read_latency;
+                        num_ecc_read_requests += 1;
+                        req->depart = clk + (8 * channel->spec->read_latency);
                     }
                     //std::cout << "row val 2: " << req->addr_vec[3] << std::endl;
                 } else {

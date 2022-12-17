@@ -101,7 +101,7 @@ public:
     map<pair<int, long>, pair<long, int>> page_translation;
 
     /* add book keeping code to know which mode to use */
-    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET} cream_mode = CREAM_MODE::NORMAL;
+    enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET, PIM} cream_mode = CREAM_MODE::NORMAL;
 
     vector<Controller<T>*> ctrls;
     T * spec;
@@ -144,7 +144,7 @@ public:
             assert((sz[int(T::Level::Row)] & (sz[int(T::Level::Row)] - 1)) == 0);
 
         /** CUSTOM CODE : CREAM */
-        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
+        cream_mode = CREAM_MODE::NORMAL;
 
         max_address = spec->channel_width / (8); // 8
 
@@ -160,12 +160,19 @@ public:
                 }
             /* For BOUNDARY method, diving each row */
             } else if (lev == 3) {
-                max_address *= sz[lev]/2; 
+                if(cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
+                    max_address *= sz[lev]/2; 
+                } else {
+                    max_address *= sz[lev]; 
+                }
             } else {
                 max_address *= sz[lev];
             }
         }
-        max_address = 75497472;
+
+        if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
+            max_address = 75497472;
+        }
         addr_bits[int(T::Level::MAX) - 1] -= calc_log2(spec->prefetch_size);
 
         // Initiating translation
@@ -399,6 +406,16 @@ public:
                                 req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                                 req.addr_vec[i] = req.addr_vec[i] % 1152;
                             }
+                        } else if (cream_mode == CREAM_MODE::PIM) {
+                            auto cur_addr = addr>>12;
+                            auto page = page_translation.find(std::make_pair(coreid, cur_addr)); 
+                            if (page != page_translation.end()) {
+                                std::cout << "found a page" << std::endl;
+                                if ((*page).second.second == 1) {
+                                    //std::cout << "found a req" << std::endl;
+                                }
+                            }
+                            req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         } else {
                             req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         } 
