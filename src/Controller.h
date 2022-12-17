@@ -500,7 +500,7 @@ public:
                     if (req->addr_vec[3] > 1024) {
                         /* 8 back to back requests */
                         num_ecc_read_requests += 1;
-                        req->depart = clk + (8 * channel->spec->read_latency);
+                        //req->depart = clk + (8 * channel->spec->read_latency);
                     }
                     //std::cout << "row val 2: " << req->addr_vec[3] << std::endl;
                 } else {
