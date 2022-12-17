@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cassert>
 #include <tuple>
+#include <unordered_set>
 
 using namespace std;
 
@@ -58,6 +59,7 @@ protected:
 
   ScalarStat physical_page_replacement;
   ScalarStat physical_pages_remaining;
+  ScalarStat num_memory_write_requests;
   ScalarStat dirty_write_physical_pages;
   ScalarStat total_physical_pages;
   ScalarStat total_dirty_pages;
@@ -68,6 +70,8 @@ protected:
   ScalarStat in_queue_req_num_avg;
   ScalarStat in_queue_read_req_num_avg;
   ScalarStat in_queue_write_req_num_avg;
+  ScalarStat max_dirty_pages;
+  ScalarStat sum_dirty_pages;
 
 #ifndef INTEGRATED_WITH_GEM5
   VectorStat record_read_requests;
@@ -99,7 +103,7 @@ public:
     long free_physical_pages_remaining;
     /* Idea: store the page mapping along with whether its dirty */
     map<pair<int, long>, pair<long, int>> page_translation;
-
+    unordered_set<long> dirty_physical_pages;
     /* add book keeping code to know which mode to use */
     enum class CREAM_MODE { NORMAL = 0, RANK_SUBSET, WRAP_AROUND, BOUNDARY_SUBSET, PIM} cream_mode = CREAM_MODE::NORMAL;
 
@@ -144,7 +148,7 @@ public:
             assert((sz[int(T::Level::Row)] & (sz[int(T::Level::Row)] - 1)) == 0);
 
         /** CUSTOM CODE : CREAM */
-        cream_mode = CREAM_MODE::NORMAL;
+        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
 
         max_address = spec->channel_width / (8); // 8
 
@@ -171,7 +175,7 @@ public:
         }
 
         if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
-            max_address = 75497472;
+            max_address = 75091456;
         }
         addr_bits[int(T::Level::MAX) - 1] -= calc_log2(spec->prefetch_size);
 
@@ -267,6 +271,18 @@ public:
             .desc("The theoretical maximum bandwidth (Bps)")
             .precision(0)
             ;
+
+        sum_dirty_pages
+            .name("sum_dirty_pages")
+            .desc("sum_dirty_pages")
+            .precision(0)
+            ;
+
+        max_dirty_pages
+            .name("max_dirty_pages")
+            .desc("max_dirty_pages")
+            .precision(0)
+            ;
         in_queue_req_num_sum
             .name("in_queue_req_num_sum")
             .desc("Sum of read/write queue length")
@@ -295,6 +311,11 @@ public:
         in_queue_write_req_num_avg
             .name("in_queue_write_req_num_avg")
             .desc("Average of write queue length per memory cycle")
+            .precision(6)
+            ;
+        num_memory_write_requests
+            .name("num_memory_write_requests")
+            .desc("num_memory_write_requests")
             .precision(6)
             ;
 #ifndef INTEGRATED_WITH_GEM5
@@ -377,6 +398,10 @@ public:
                 case int(Type::ChRaBaRoCo):
                     for (int i = addr_bits.size() - 1; i >= 0; i--){
                         // here we need to check for the COL 
+                        auto val = sum_dirty_pages.value() ;
+                        val += total_dirty_pages.value();
+                        sum_dirty_pages = val;
+
                         if(i == 4 && (cream_mode == CREAM_MODE::RANK_SUBSET )) {
                             int chip_index = addr & (( 1 << 4 ) - 1);
                             // if this is the 8th chip
@@ -404,21 +429,23 @@ public:
                         } else if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET){
                             if (i == 3) {
                                 req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
-                                req.addr_vec[i] = req.addr_vec[i] % 1152;
+                                auto row_add = 1024 + 121;
+                                req.addr_vec[i] = req.addr_vec[i] % row_add;
                             }
-                        } else if (cream_mode == CREAM_MODE::PIM) {
-                            auto cur_addr = addr>>12;
-                            auto page = page_translation.find(std::make_pair(coreid, cur_addr)); 
-                            if (page != page_translation.end()) {
-                                std::cout << "found a page" << std::endl;
-                                if ((*page).second.second == 1) {
-                                    //std::cout << "found a req" << std::endl;
-                                }
-                            }
-                            req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         } else {
                             req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
                         } 
+                        auto cur_addr = req.addr;
+                        cur_addr = cur_addr >> 12;
+                        auto page = page_translation.find(std::make_pair(coreid, cur_addr)); 
+                       
+                        if (page != page_translation.end()) {
+                            auto phy_page = (*page).second.first;
+                            if (dirty_physical_pages.find(phy_page) != dirty_physical_pages.end()) {
+                                // set dirty to true;
+                                req.dirty = 1;
+                            }
+                        }
                     }
                     break;
                 case int(Type::RoBaRaCoCh):
@@ -657,6 +684,13 @@ public:
                       page_translation[target] = make_pair(phys_page_to_read, (int)is_write);
                       if (page_translation[target].second == 1) {
                         dirty_write_physical_pages += 1;
+                        if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
+                            max_dirty_pages = 0 ;
+                            max_dirty_pages += dirty_write_physical_pages.value();
+                        }
+                        dirty_physical_pages.insert(phys_page_to_read);
+                      } else {
+                        dirty_physical_pages.erase(phys_page_to_read);
                       }
 
                     } else {
@@ -682,6 +716,11 @@ public:
                         free_physical_pages[phys_page_to_read] = coreid;
                         if (is_write) {
                             dirty_write_physical_pages += 1;
+                            if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
+                                max_dirty_pages = 0 ;
+                                max_dirty_pages += dirty_write_physical_pages.value();
+                            }
+                            dirty_physical_pages.insert(phys_page_to_read);
                         }
                         total_dirty_pages += 1;
                         --free_physical_pages_remaining;
@@ -693,7 +732,12 @@ public:
                     /* if its not already captured */
                     if (page_translation[target].second != 1) {
                         dirty_write_physical_pages += 1;
+                        if (dirty_write_physical_pages.value() > max_dirty_pages.value()) {
+                            max_dirty_pages = 0 ;
+                            max_dirty_pages += dirty_write_physical_pages.value();
+                        }
                         page_translation[target].second = 1;
+                        dirty_physical_pages.insert(page_translation[target].first);
                     }
                     
                 } 

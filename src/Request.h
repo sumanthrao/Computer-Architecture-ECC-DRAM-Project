@@ -18,7 +18,7 @@ public:
     vector<int> addr_vec;
     // specify which core this request sent from, for virtual address translation
     int coreid;
-
+    int dirty = 0;
     enum class Type
     {
         READ,

@@ -48,7 +48,9 @@ protected:
 
     ScalarStat read_latency_avg;
     ScalarStat read_latency_sum;
-
+    ScalarStat dirty_reads_total;
+    ScalarStat non_dirty_reads_total;
+    ScalarStat non_dirty_reads_to_ecc_addr_total;
     ScalarStat num_ecc_read_requests;
 
     ScalarStat req_queue_length_avg;
@@ -133,7 +135,7 @@ public:
         }
         
         /* CREAM CUSTOM CODE */
-        cream_mode = CREAM_MODE::NORMAL;
+        cream_mode = CREAM_MODE::BOUNDARY_SUBSET;
         /* Calculate the boundary once here */
         int *sz = channel->spec->org_entry.count;
         auto col_sz = sz[4];
@@ -300,6 +302,25 @@ public:
             .name("record_write_conflicts")
             .desc("record write conflict for this core when it reaches request limit or to the end")
             ;
+
+        dirty_reads_total
+            
+            .name("dirty_reads_total")
+            .desc("dirty_reads_total")
+            ;
+
+        non_dirty_reads_total
+            
+            .name("non_dirty_reads_total")
+            .desc("non_dirty_reads_total")
+            ;
+
+        non_dirty_reads_to_ecc_addr_total
+            
+            .name("non_dirty_reads_to_ecc_addr_total")
+            .desc("non_dirty_reads_to_ecc_addr_total")
+            ;
+        
 #endif
     }
 
@@ -487,7 +508,13 @@ public:
         if (req->type == Request::Type::READ) {
             /** default latency */
             req->depart = clk + channel->spec->read_latency;
-            
+            /* If it belongs to one of the boundary rows */
+            if (req->dirty) {
+                dirty_reads_total++;
+            } else {
+                non_dirty_reads_total++;
+            }
+                    
             if (cream_mode != CREAM_MODE::NORMAL) {
                 if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
                     auto addr = req->addr;
@@ -496,10 +523,12 @@ public:
 
                     auto  col_val = slice_lower_bits(addr,  calc_log2(sz[4]));
                     auto  row_val = slice_lower_bits(addr,  calc_log2(sz[3]));
-                    /* If it belongs to one of the boundary rows */
                     if (req->addr_vec[3] > 1024) {
                         /* 8 back to back requests */
                         num_ecc_read_requests += 1;
+                        if (!req->dirty) {
+                            non_dirty_reads_to_ecc_addr_total++;
+                        }
                         //req->depart = clk + (8 * channel->spec->read_latency);
                     }
                     //std::cout << "row val 2: " << req->addr_vec[3] << std::endl;
