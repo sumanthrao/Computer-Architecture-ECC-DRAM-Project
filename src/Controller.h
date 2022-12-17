@@ -136,9 +136,10 @@ public:
         int *sz = channel->spec->org_entry.count;
         auto col_sz = sz[4];
         col_sz = col_sz >> 6; // last 6 bits are for prefetch (64 bytes)
-        auto row_sz = sz[3];
-        auto ECC_capacity = ECC_RATIO * col_sz * row_sz;
-        ROW_BOUNDARY = (col_sz * row_sz) - ECC_capacity;
+        auto row_sz = sz[3]/2;
+        auto ROW_BOUNDARY = col_sz * row_sz;
+        auto MAX_BANK_ADDRESS = (row_sz * (9/8)*col_sz);
+        //ROW_BOUNDARY = (col_sz * row_sz) - ECC_capacity;
 
         // regStats
         row_hits
@@ -489,10 +490,12 @@ public:
                     auto  col_val = slice_lower_bits(addr,  calc_log2(sz[4]));
                     auto  row_val = slice_lower_bits(addr,  calc_log2(sz[3]));
                     /* If it belongs to one of the boundary rows */
-                    if ((col_val*row_val) > ROW_BOUNDARY) {
+                    if (req->addr_vec[3] > 1024) {
                         /* 8 back to back requests */
+                        //std::cout << "row val: " << req->addr_vec[3] << std::endl;
                         req->depart = clk + 8 * channel->spec->read_latency;
                     }
+                    //std::cout << "row val 2: " << req->addr_vec[3] << std::endl;
                 } else {
                     /** 
                     ECC DRAM CODE : Map the 9 chips as 8:1 
@@ -529,7 +532,7 @@ public:
             // req->callback(*req);
         }
 
-        // remove request from queue
+        // remove request from queue 
         queue->q.erase(req);
     }
 

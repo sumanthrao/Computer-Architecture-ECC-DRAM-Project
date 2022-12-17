@@ -153,17 +153,19 @@ public:
             /* For COL add customization code to process CREAM*/
             if (lev == 4) {
                 // if we are using the ECC portion of RAM, then max address will be different
-                if(cream_mode == CREAM_MODE::RANK_SUBSET) {
-                    max_address *= ((sz[lev] / 2) + (sz[lev]/(2*8))); // sz[4] represents the col count 
+                if(cream_mode == CREAM_MODE::BOUNDARY_SUBSET) {
+                    max_address *= sz[lev] * (9/8); // ((sz[lev] / 2) + (sz[lev]/(2*8))); // sz[4] represents the col count 
                 } else {
                     max_address *= sz[lev];  // we have one addiional chip of capacity
                 }
             /* For BOUNDARY method, diving each row */
+            } else if (lev == 3) {
+                max_address *= sz[lev]/2; 
             } else {
                 max_address *= sz[lev];
             }
         }
-
+        max_address = 75497472;
         addr_bits[int(T::Level::MAX) - 1] -= calc_log2(spec->prefetch_size);
 
         // Initiating translation
@@ -392,9 +394,14 @@ public:
                             auto og = slice_lower_bits(addr, addr_bits[i]);
                             
                             //cout << "og addr: " << og << " updated addr: " << req.addr_vec[i] << std::endl;
+                        } else if (cream_mode == CREAM_MODE::BOUNDARY_SUBSET){
+                            if (i == 3) {
+                                req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
+                                req.addr_vec[i] = req.addr_vec[i] % 1152;
+                            }
                         } else {
                             req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
-                        }
+                        } 
                     }
                     break;
                 case int(Type::RoBaRaCoCh):
